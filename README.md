@@ -305,7 +305,7 @@ The fidelity still remains far below fault-tolerant thresholds, but that limitat
 ### Bloch-Sphere Analysis
 
 <p align="center">
-  <img src="results/bloch_dynamics.png" width="700" alt="Bloch sphere expectation values ⟨X⟩, ⟨Y⟩, ⟨Z⟩ during the optimized pulse">
+  <img src="results/bloch_dynamics.png" width="750" alt="Bloch sphere expectation values ⟨X⟩, ⟨Y⟩, ⟨Z⟩ during the optimized pulse">
 </p>
 
 <p align="center"><sub>⟨X⟩, ⟨Y⟩, ⟨Z⟩ expectation values across the pulse duration, evaluated at the optimized amplitude (A ≈ 0.662).</sub></p>
