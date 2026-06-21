@@ -1,260 +1,128 @@
 # PulseForge-QC
 
-## Pulse-Level Quantum Control and Optimization of a Noisy Superconducting Qubit
+### Pulse-Level Quantum Control and Optimization of a Noisy Superconducting Qubit
 
-PulseForge-QC is a compact quantum control simulation framework for modeling, optimizing, and visualizing microwave-driven qubit dynamics under decoherence.
+PulseForge-QC is a compact simulation framework for modeling, optimizing, and visualizing microwave-driven qubit dynamics under decoherence. It treats control at the **pulse level** rather than the gate level: a qubit is prepared, driven by a shaped microwave envelope, evolved under realistic noise, and the drive is then optimized to maximize the probability of landing in the target state.
 
-The project is built around a realistic control workflow:
-
-1. define the qubit and pulse parameters,
-2. generate a shaped microwave control pulse,
-3. evolve the state with open-system dynamics,
-4. optimize the pulse amplitude,
-5. inspect the Bloch-vector trajectory,
-6. compare the result against an ideal Qiskit reference gate.
-
-The codebase is intentionally compact, but the architecture mirrors the same core ideas that appear in pulse-level quantum control software:
-
-- Hamiltonian modeling,
-- decoherence-aware simulation,
-- waveform engineering,
-- numerical optimization,
-- and physical interpretation of control dynamics.
+The codebase is intentionally small, but its architecture mirrors the core ideas that appear in real pulse-level control software: Hamiltonian modeling, decoherence-aware simulation, waveform engineering, numerical optimization, and physical interpretation of the resulting dynamics.
 
 ---
 
-# Project Motivation
+## Table of Contents
 
-Real superconducting qubits are not controlled by abstract gates alone. They are controlled through carefully engineered microwave pulses whose:
-
-- amplitude,
-- phase,
-- duration,
-- and shape
-
-determine the resulting quantum evolution.
-
-That creates a real control-engineering problem:
-
-- the pulse must rotate the qubit by the correct amount,
-- decoherence continuously degrades the state,
-- and control parameters must be calibrated to maximize gate fidelity.
-
-This project simulates that workflow computationally.
-
-The goal is physically meaningful:
-
-> Start from a qubit in the ground state, apply a shaped microwave pulse, evolve the system under realistic noise, and optimize the control pulse to maximize population transfer into the target state.
-
----
-
-# Physics Background
-
-## Driven Qubit Dynamics
-
-A driven two-level system evolves according to the Schrödinger equation:
-
-\[
-i\frac{d}{dt}|\psi(t)\rangle = H(t)|\psi(t)\rangle
-\]
-
-In the rotating frame, the driven qubit Hamiltonian used in this project is:
-
-\[
-H(t)=\frac{\Delta}{2}\sigma_z+\frac{\Omega(t)}{2}\sigma_x
-\]
-
-where:
-
-- \(\Delta = \omega_q - \omega_d\) is the detuning,
-- \(\sigma_x,\sigma_z\) are Pauli operators,
-- \(\Omega(t)\) is the microwave pulse envelope.
-
-The current configuration uses:
-
-\[
-\omega_q = \omega_d
-\]
-
-so that:
-
-\[
-\Delta = 0
-\]
-
-This removes off-resonant drift and isolates the effect of:
-
-- the control pulse,
-- and the decoherence channels.
-
-That choice makes the dynamics easier to interpret physically.
+- [Motivation](#motivation)
+- [Physics Background](#physics-background)
+  - [Driven Qubit Dynamics](#driven-qubit-dynamics)
+  - [Gaussian Pulse Engineering](#gaussian-pulse-engineering)
+  - [Open Quantum Systems](#open-quantum-systems)
+  - [Relaxation and Dephasing](#relaxation-and-dephasing)
+  - [Fidelity](#fidelity)
+  - [Bloch-Sphere Observables](#bloch-sphere-observables)
+- [Features](#features)
+- [Software Stack](#software-stack)
+- [Project Structure](#project-structure)
+- [Module Breakdown](#module-breakdown)
+- [Installation](#installation)
+- [Running the Project](#running-the-project)
+- [Results and Physical Interpretation](#results-and-physical-interpretation)
+- [Critical Assessment](#critical-assessment)
+- [Future Extensions](#future-extensions)
+- [Requirements](#requirements)
+- [Author](#author)
 
 ---
 
-## Gaussian Pulse Engineering
+## Motivation
 
-The control field is modeled using a Gaussian pulse:
+Real superconducting qubits are not controlled by abstract gates. A gate like "apply X" is a convenient fiction at the circuit level — physically, it is implemented by sending a carefully engineered microwave pulse into the qubit, where the pulse's **amplitude**, **phase**, **duration**, and **shape** jointly determine the resulting evolution.
 
-\[
-\Omega(t)=A\exp\left(-\frac{(t-t_0)^2}{2\sigma^2}\right)
-\]
+That turns "apply a gate" into a genuine control-engineering problem:
 
-where:
+- the pulse must rotate the qubit by the correct angle to reach the target state,
+- decoherence acts continuously throughout the drive, not just at the end, degrading the state while the pulse is still being applied,
+- and the control parameters have to be calibrated against that moving target rather than against an idealized closed system.
 
-- \(A\) is the pulse amplitude,
-- \(t_0\) is the pulse center,
-- \(\sigma\) controls pulse width.
+PulseForge-QC simulates exactly that workflow computationally. The guiding scenario is simple to state and physically meaningful:
 
-A Gaussian envelope is not chosen arbitrarily.
+> Start from a qubit in the ground state, apply a shaped microwave pulse, evolve the system under realistic T1/T2 noise, and optimize the control pulse to maximize population transfer into the target state.
 
-Smooth pulses are widely used in superconducting-qubit control because abrupt waveform discontinuities introduce high-frequency spectral components that can excite unwanted transitions and distort the control dynamics.
-
-So even this simple pulse already reflects an important hardware-aware control principle:
-
-> smoother pulses generally produce cleaner dynamics.
+Everything in the repository — the pulse shape, the noise model, the solver, the optimizer, the diagnostics, and the Qiskit reference — exists in service of answering that one question quantitatively, and then explaining *why* the answer comes out the way it does.
 
 ---
 
-## Open Quantum Systems
+## Physics Background
 
-Real qubits are not isolated systems.
+### Driven Qubit Dynamics
 
-They interact with:
+A driven two-level system evolves under the Schrödinger equation:
 
-- electromagnetic environments,
-- substrate defects,
-- control electronics,
-- thermal noise,
-- and surrounding circuitry.
+$$i\frac{d}{dt}|\psi(t)\rangle = H(t)|\psi(t)\rangle$$
 
-As a result:
+In the frame rotating at the drive frequency, the Hamiltonian used in this project is:
 
-- energy decays,
-- phase coherence is lost,
-- and gate operations become imperfect.
+$$H(t) = \frac{\Delta}{2}\sigma_z + \frac{\Omega(t)}{2}\sigma_x$$
 
-The project models these effects using the Lindblad master equation:
+where $\Delta = \omega_q - \omega_d$ is the detuning between the qubit frequency and the drive frequency, $\sigma_x, \sigma_z$ are Pauli operators, and $\Omega(t)$ is the microwave pulse envelope.
 
-\[
-\dot{\rho}
-=
--i[H,\rho]
-+
-\sum_k
-\left(
-L_k\rho L_k^\dagger
--
-\frac12
-\{L_k^\dagger L_k,\rho\}
-\right)
-\]
+The current configuration sets $\omega_q = \omega_d$, so $\Delta = 0$. This removes off-resonant drift from the dynamics entirely and isolates the effect of the control pulse and the decoherence channels — nothing else is competing with the drive for the qubit's evolution. That choice keeps the resulting dynamics easy to interpret physically, which matters later when explaining the Bloch-sphere trajectories.
 
-where:
+### Gaussian Pulse Engineering
 
-- \(\rho\) is the density matrix,
-- \(L_k\) are collapse operators.
+The control field is shaped as a Gaussian envelope:
 
-This formalism is important because pure state evolution alone is insufficient for realistic pulse simulation.
+$$\Omega(t) = A\exp\left(-\frac{(t-t_0)^2}{2\sigma^2}\right)$$
 
-The density matrix framework captures:
+where $A$ is the pulse amplitude, $t_0$ is the pulse center, and $\sigma$ controls the pulse width.
 
-- coherent dynamics,
-- population transfer,
-- relaxation,
-- and decoherence simultaneously.
+The Gaussian shape isn't an arbitrary convenience. Smooth pulses are the standard choice in superconducting-qubit control because abrupt waveform discontinuities introduce high-frequency spectral content that can excite unwanted transitions and distort the intended dynamics. So even this single-parameter pulse already reflects a real hardware-aware control principle: smoother pulses generally produce cleaner dynamics.
 
----
+### Open Quantum Systems
 
-## Relaxation and Dephasing
+Real qubits are not isolated. They interact with electromagnetic environments, substrate defects, control electronics, thermal noise, and surrounding circuitry. As a result, energy decays, phase coherence is lost, and gate operations become imperfect even when the control pulse itself is ideal.
 
-The simulation includes two standard decoherence channels.
+The project models these effects with the Lindblad master equation:
 
-### T1 Relaxation
+$$\dot{\rho} = -i[H,\rho] + \sum_k\left(L_k\rho L_k^\dagger - \frac{1}{2}\{L_k^\dagger L_k, \rho\}\right)$$
 
-Relaxation transfers population:
+where $\rho$ is the density matrix and $L_k$ are collapse operators encoding irreversible interaction with the environment. This formalism matters because pure-state (Schrödinger-equation) evolution alone cannot represent relaxation or dephasing — the density-matrix framework is what lets coherent dynamics, population transfer, relaxation, and decoherence all be captured simultaneously in one consistent picture.
 
-\[
-|1\rangle \rightarrow |0\rangle
-\]
+### Relaxation and Dephasing
 
-This directly competes with the goal of preparing the excited state.
+Two standard decoherence channels are included.
 
-Even if the pulse initially drives the qubit upward, relaxation continuously pulls population back toward the ground state.
+**T1 relaxation** transfers population $|1\rangle \to |0\rangle$. This directly competes with the goal of preparing the excited state: even if the pulse initially drives the qubit upward, relaxation continuously pulls population back toward the ground state throughout the evolution, not just after the pulse ends.
+
+**T2 dephasing** destroys phase coherence, $\rho_{01} \to 0$, without necessarily changing the populations immediately. This weakens coherent rotations and suppresses the interference effects that accurate state preparation depends on.
+
+### Fidelity
+
+The target state is $|1\rangle$. The simulator evaluates the final-state fidelity:
+
+$$F = \langle 1|\rho_f|1\rangle$$
+
+which measures how successfully the pulse prepared the excited state by the end of the evolution. The optimization routine searches for the pulse amplitude that maximizes this quantity.
+
+### Bloch-Sphere Observables
+
+The expectation values $\langle X\rangle, \langle Y\rangle, \langle Z\rangle$ are the Cartesian coordinates of the qubit state on the Bloch sphere. Physically, $\langle Z\rangle$ tracks population inversion, while $\langle X\rangle$ and $\langle Y\rangle$ track quantum coherence: transverse decay in these components indicates decoherence, while coherent oscillation indicates active pulse-driven control. Monitoring all three observables over time gives far more physical insight than looking at the final fidelity alone — it shows *how* the state got there, not just where it ended up.
 
 ---
 
-### T2 Dephasing
-
-Dephasing destroys phase coherence:
-
-\[
-\rho_{01}\rightarrow 0
-\]
-
-without necessarily changing the populations immediately.
-
-This weakens coherent rotations and suppresses interference effects required for accurate state preparation.
-
----
-
-## Fidelity
-
-The target state is:
-
-\[
-|1\rangle
-\]
-
-The simulator evaluates the final-state fidelity:
-
-\[
-F=\langle1|\rho_f|1\rangle
-\]
-
-which measures how successfully the pulse prepares the excited state.
-
-The optimization routine attempts to maximize this quantity.
-
----
-
-## Bloch-Sphere Observables
-
-The expectation values:
-
-\[
-\langle X\rangle,\quad
-\langle Y\rangle,\quad
-\langle Z\rangle
-\]
-
-represent the Cartesian coordinates of the qubit on the Bloch sphere.
-
-Physically:
-
-- \(\langle Z\rangle\) tracks population inversion,
-- \(\langle X\rangle\) and \(\langle Y\rangle\) track quantum coherence,
-- transverse decay indicates decoherence,
-- coherent oscillations indicate active pulse-driven control.
-
-Monitoring these observables provides much more physical insight than looking only at the final fidelity.
-
----
-
-# Features
+## Features
 
 - Gaussian pulse engineering
 - Time-dependent Hamiltonian simulation
-- Lindblad master equation evolution
+- Lindblad master equation evolution (QuTiP `mesolve`)
 - T1 relaxation modeling
 - T2 dephasing modeling
-- Pulse amplitude optimization
+- Pulse amplitude optimization (SciPy L-BFGS-B)
 - Bloch-sphere trajectory visualization
 - Qiskit-based ideal gate verification
 - Modular scientific software architecture
 
 ---
 
-# Software Stack
+## Software Stack
 
 | Library | Purpose |
 |---|---|
@@ -266,7 +134,7 @@ Monitoring these observables provides much more physical insight than looking on
 
 ---
 
-# Project Structure
+## Project Structure
 
 ```text
 PulseForge-QC/
@@ -297,166 +165,93 @@ PulseForge-QC/
 │   └── qiskit_verification.py
 │
 └── results/
+    └── bloch_dynamics.png
 ```
 
 ---
 
-# Module Breakdown
+## Module Breakdown
 
-## `system_config.py`
+### `config/system_config.py`
 
-Contains all physical and numerical parameters:
+Holds all physical and numerical parameters: qubit frequency, drive frequency, decoherence times ($T_1$, $T_2$), pulse duration, Gaussian width, and simulation resolution. The resonant-drive condition ($\omega_q = \omega_d$) is set here, which is important because it removes unnecessary detuning effects and isolates the control dynamics from the rest of the system.
 
-- qubit frequency,
-- drive frequency,
-- decoherence times,
-- pulse duration,
-- Gaussian width,
-- simulation resolution.
+### `pulses/pulse_shapes.py`
 
-The resonant-drive condition is important because it removes unnecessary detuning effects and isolates the control dynamics.
+Defines the Gaussian pulse envelope as a standalone function of time. Waveform generation is kept in its own module because pulse shaping is a core abstraction in pulse-level control systems — it is the one piece of the pipeline a hardware engineer would actually redesign first when moving to DRAG or other shaped pulses.
 
----
+### `noise/noise_model.py`
 
-## `pulse_shapes.py`
+Constructs the Lindblad collapse operators for relaxation and dephasing from $T_1$ and $T_2$. These operators encode irreversible qubit-environment interaction; without them the simulation would describe an idealized closed system rather than realistic noisy hardware.
 
-Defines the Gaussian pulse envelope.
+### `simulation/pulse_simulator.py`
 
-The pulse shape is separated into its own module because waveform generation is a core abstraction in pulse-level control systems.
+The core simulation engine. Responsible for building the time-dependent Hamiltonian, calling QuTiP's `mesolve` to evolve the Lindblad dynamics, and evaluating the final-state fidelity. This module is where pulse design is connected directly to a physical outcome — every other module either feeds parameters into it or consumes its output.
 
----
+### `optimization/optimize_pulse.py`
 
-## `noise_model.py`
+Uses SciPy's L-BFGS-B to tune the pulse amplitude. This is not simply searching for a bigger number — it is searching for the control strength that best balances coherent rotation against decoherence losses over the fixed pulse duration. The optimization landscape is nontrivial precisely because coherent control and decoherence compete throughout the evolution rather than at a single instant.
 
-Constructs Lindblad collapse operators for:
+### `visualization/bloch_visualization.py`
 
-- relaxation,
-- and dephasing.
+Plots $\langle X\rangle, \langle Y\rangle, \langle Z\rangle$ across the full pulse evolution and saves the figure to `results/bloch_dynamics.png`. This is critical because the Bloch trajectory reveals *how* the state evolves over time, not just whether the final fidelity is high or low.
 
-These operators encode irreversible interactions between the qubit and the environment.
+### `qiskit_layer/qiskit_verification.py`
 
-Without them, the simulation would represent an idealized closed system rather than realistic noisy hardware.
+Constructs an ideal single-qubit X-gate in Qiskit and reports its exact final statevector. This provides a clean, decoherence-free reference against which the noisy pulse-driven evolution can be compared. The distinction between ideal gate evolution and realistic pulse dynamics is one of the central ideas in quantum control, and this module makes that distinction explicit and quantitative.
 
 ---
 
-## `pulse_simulator.py`
+## Installation
 
-Core simulation engine.
-
-Responsible for:
-
-- Hamiltonian construction,
-- time-dependent control evolution,
-- Lindblad dynamics,
-- fidelity evaluation.
-
-The simulation connects pulse design directly to physical outcomes.
-
-This is the heart of the project.
-
----
-
-## `optimize_pulse.py`
-
-Uses numerical optimization to tune the pulse amplitude.
-
-The optimizer is not just searching for a better number.
-
-It is effectively searching for the control strength that best balances:
-
-- coherent rotation,
-- decoherence losses,
-- and pulse duration.
-
-The optimization landscape is nontrivial because coherent control and decoherence compete against each other throughout the evolution.
-
----
-
-## `bloch_visualization.py`
-
-Plots:
-
-- \(\langle X\rangle\),
-- \(\langle Y\rangle\),
-- \(\langle Z\rangle\)
-
-throughout the pulse evolution.
-
-This is critical because the Bloch trajectory reveals *how* the state evolves, not just whether the final fidelity is high or low.
-
----
-
-## `qiskit_verification.py`
-
-Constructs an ideal single-qubit X gate using Qiskit.
-
-This provides a clean reference against which the noisy pulse-driven evolution can be compared.
-
-The distinction between:
-- ideal gate evolution,
-- and realistic pulse dynamics
-
-is one of the central ideas in quantum control.
-
----
-
-# Installation
-
-## Clone Repository
+### Clone the Repository
 
 ```bash
 git clone https://github.com/SoumyajitPal-2210/PulseForge-QC.git
-
 cd PulseForge-QC
 ```
 
----
+### Create a Virtual Environment (Recommended)
 
-## Create Virtual Environment (Recommended)
-
-### Linux / macOS
+**Linux / macOS**
 
 ```bash
 python -m venv venv
-
 source venv/bin/activate
 ```
 
-### Windows
+**Windows**
 
 ```bash
 python -m venv venv
-
 venv\Scripts\activate
 ```
 
----
-
-## Install Dependencies
+### Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
+This installs NumPy, SciPy, Matplotlib, QuTiP, and Qiskit at the versions pinned in `requirements.txt`.
+
 ---
 
-# Running the Project
+## Running the Project
 
 ```bash
 python main.py
 ```
 
-The execution pipeline performs:
+The execution pipeline performs, in order:
 
 1. baseline pulse simulation,
-2. pulse optimization,
+2. pulse amplitude optimization,
 3. optimized pulse re-simulation,
-4. Bloch-sphere visualization,
-5. Qiskit reference verification.
+4. Bloch-sphere visualization (saved to `results/bloch_dynamics.png`),
+5. Qiskit ideal-gate reference verification.
 
----
-
-# Example Runtime Output
+Expected console output:
 
 ```text
 ==============================
@@ -480,19 +275,15 @@ Statevector([0.+0.j, 1.+0.j],
             dims=(2,))
 ```
 
+> **QuTiP version note:** `simulation/pulse_simulator.py` calls `mesolve` with `c_ops` passed as a keyword argument, matching the QuTiP ≥5.0 signature pinned in `requirements.txt`. If you're running an older QuTiP 4.x environment, pass `c_ops` positionally instead (`mesolve(H, rho0, tlist, c_ops, args=...)`).
+
 ---
 
-# Results and Physical Interpretation
+## Results and Physical Interpretation
 
-The project was executed end-to-end using the current system parameters.
-
-Observed output:
+The project was executed end-to-end with the current system parameters: $T_1 = 20$, $T_2 = 30$, Gaussian width $\sigma = 2$, pulse duration $= 20$, resonant drive ($\Delta = 0$).
 
 ```text
-==============================
- QUANTUM CONTROL SIMULATION
-==============================
-
 Baseline fidelity: 0.312912
 
 Optimization Results
@@ -501,221 +292,41 @@ Optimal amplitude: 0.662160
 Optimal fidelity: 0.577298
 ```
 
-Generated output:
+### Baseline Fidelity Analysis
 
-```text
-results/bloch_dynamics.png
-```
+The initial fidelity, $F \approx 0.31$ at amplitude $A=1.0$, is relatively poor. The original Gaussian pulse does not produce an accurate qubit inversion under the current noisy dynamics. That outcome is physically meaningful rather than a sign of a broken simulator: the pulse must simultaneously rotate the qubit correctly, avoid overshooting, and compete against decoherence acting throughout the drive. A naive, uncalibrated pulse amplitude rarely succeeds immediately in a realistic control problem — the low baseline fidelity is evidence that calibration matters, which is exactly the premise this project is built to demonstrate.
 
----
+### Optimization Behavior
 
-## Baseline Fidelity Analysis
+After optimization, $F \approx 0.58$ at $A \approx 0.662$ — almost double the baseline. This confirms three things at once: the simulator responds correctly to the control parameter, the control landscape contains real recoverable structure (the optimizer isn't just sitting at its initial guess), and the L-BFGS-B optimization loop is functioning correctly.
 
-The initial fidelity:
+The fidelity still remains far below fault-tolerant thresholds, but that limitation is expected given how constrained the control model is. Only the pulse **amplitude** is optimized — pulse width, phase, center, pulse family, and drive structure are all held fixed. The optimizer is therefore solving a tightly constrained one-parameter control problem, not a fully expressive one, and the result should be read in that light.
 
-\[
-F \approx 0.31
-\]
+### Bloch-Sphere Analysis
 
-is relatively poor.
+<p align="center">
+  <img src="results/bloch_dynamics.png" width="650" alt="Bloch sphere expectation values ⟨X⟩, ⟨Y⟩, ⟨Z⟩ during the optimized pulse">
+</p>
 
-This means the original Gaussian pulse does not produce an accurate qubit inversion under the current noisy dynamics.
+<p align="center"><sub>⟨X⟩, ⟨Y⟩, ⟨Z⟩ expectation values across the pulse duration, evaluated at the optimized amplitude (A ≈ 0.662).</sub></p>
 
-That outcome is physically meaningful.
+This trajectory is the most physically informative output of the simulation — it shows *how* the qubit got to its final fidelity, not just the number itself.
 
-The pulse must simultaneously:
+**Why ⟨X⟩ stays at ≈ 0 throughout.** The control Hamiltonian is proportional to $\sigma_x$. A Hamiltonian generated by $\sigma_x$ produces rotations *around* the x-axis of the Bloch sphere, which means the x-component of the Bloch vector is approximately conserved while the state rotates in the y–z plane. That is exactly what the flat blue line shows. This is not an uninteresting flat line — it's a sanity check that the Hamiltonian implementation, the pulse coupling direction, and the resulting Bloch geometry are all internally consistent with the stated physics.
 
-- rotate the qubit correctly,
-- avoid overshooting,
-- and compete against decoherence.
+**Why ⟨Y⟩ develops a strong oscillation.** The qubit starts at $\langle Z\rangle \approx +1$, the ground state $|0\rangle$. As the Gaussian pulse turns on (centered at $t=10$), coherent superpositions begin to form, and that coherence appears as the large transient excursion in $\langle Y\rangle$ — it swings down to roughly $-0.9$ near the pulse center, reflecting strong coherent rotation. After the pulse passes its peak, $\langle Y\rangle$ rises back toward zero. That decay is physically important in its own right: it is dephasing and environmental damping acting on the coherence generated by the drive, visualized directly rather than inferred from the final fidelity alone.
 
-A naive pulse amplitude rarely succeeds immediately in realistic control problems.
+**Why ⟨Z⟩ never reaches −1.** A perfect inversion would drive $\langle Z\rangle \to -1$, corresponding to a clean preparation of $|1\rangle$. In the plot, $\langle Z\rangle$ falls steeply starting around $t \approx 5$, crosses zero near the pulse center, and bottoms out around $-0.63$ near $t \approx 12$–13 — a substantial but incomplete inversion. It then partially relaxes back toward less negative values for the remainder of the evolution. This trajectory explains the limited 0.577 fidelity directly: the pulse produces real, partial inversion, but decoherence removes population and coherence decays *during* the drive itself, and the single-parameter pulse model has no mechanism left to compensate once that has happened.
 
-So the low baseline fidelity is not evidence of a broken simulator. It is evidence that calibration matters.
+**The central physical insight.** The optimizer is not failing numerically — the control model itself is limited. It successfully finds the best amplitude *within the chosen one-parameter Gaussian pulse family*, but a single amplitude cannot simultaneously fix coherent rotation, counteract continuous decoherence, and correct for accumulated phase error. This is exactly the motivation behind the multi-parameter and closed-loop pulse-shaping methods used in real calibration pipelines — DRAG pulses, GRAPE optimization, CRAB methods, and iterative closed-loop calibration all exist specifically to address what this minimal model exposes cleanly: a one-parameter Gaussian pulse hits a hard, interpretable fidelity ceiling under realistic decoherence.
 
 ---
 
-## Optimization Behavior
-
-After optimization:
-
-\[
-F \approx 0.58
-\]
-
-The optimizer significantly improves the state-transfer performance.
-
-This confirms several things:
-
-- the simulator responds correctly to pulse parameters,
-- the control landscape contains recoverable structure,
-- and the optimization loop is functioning properly.
-
-However, the fidelity still remains far below fault-tolerant thresholds.
-
-That limitation is expected because the current control model is intentionally minimal.
-
-Only one parameter is optimized:
-
-- pulse amplitude.
-
-Everything else remains fixed:
-
-- pulse width,
-- pulse phase,
-- pulse center,
-- pulse family,
-- and drive structure.
-
-So the optimizer is solving a constrained control problem rather than a fully expressive one.
-
----
-
-## Bloch-Sphere Analysis
-
-The Bloch trajectory is the most physically informative part of the simulation.
-
-### Why \(\langle X\rangle\) remains near zero
-
-The control Hamiltonian is proportional to:
-
-\[
-H(t)\propto \sigma_x
-\]
-
-A Hamiltonian generated by \(\sigma_x\) produces rotations *around the x-axis* of the Bloch sphere.
-
-That means:
-- the x-component is approximately conserved,
-- while the y-z plane undergoes rotation.
-
-This is exactly what appears in the simulation.
-
-So the near-zero behavior of:
-
-\[
-\langle X\rangle
-\]
-
-is actually an important sanity check.
-
-It confirms that:
-- the Hamiltonian implementation is internally consistent,
-- the pulse coupling direction is correct,
-- and the Bloch dynamics match the expected geometry of the control operator.
-
----
-
-### Why \(\langle Y\rangle\) develops strong oscillations
-
-Initially the qubit starts near:
-
-\[
-\langle Z\rangle \approx +1
-\]
-
-corresponding to the ground state:
-
-\[
-|0\rangle
-\]
-
-As the pulse drives the system, coherent superpositions begin to form.
-
-That coherence appears as a strong transient signal in:
-
-\[
-\langle Y\rangle
-\]
-
-The large negative excursion indicates active coherent rotation generated by the control pulse.
-
-Later:
-
-\[
-\langle Y\rangle
-\]
-
-decays back toward zero.
-
-That decay is physically important because it reflects:
-- dephasing,
-- coherence loss,
-- and environmental damping during the pulse evolution.
-
-So the plot is not merely showing oscillation — it is directly visualizing coherence generation and coherence decay.
-
----
-
-### Why \(\langle Z\rangle\) never reaches -1
-
-The quantity:
-
-\[
-\langle Z\rangle
-\]
-
-tracks population inversion.
-
-A perfect X-gate would ideally drive:
-
-\[
-\langle Z\rangle \rightarrow -1
-\]
-
-which corresponds to successful preparation of:
-
-\[
-|1\rangle
-\]
-
-In the simulation, \(\langle Z\rangle\) decreases substantially but never fully reaches -1.
-
-Instead:
-- the trajectory bends,
-- partially relaxes,
-- and settles at a less negative value.
-
-That behavior explains the limited fidelity directly.
-
-The pulse is producing partial inversion, but:
-- decoherence removes population,
-- coherence decays during the drive,
-- and the restricted pulse model cannot fully compensate.
-
----
-
-## Most Important Physical Insight
-
-The key result is:
-
-> the optimization is not failing numerically — the control model itself is limited.
-
-
-The optimizer successfully finds the best amplitude *within the chosen pulse family*.
-
-But a single Gaussian amplitude parameter cannot fully compensate for:
-- decoherence,
-- phase accumulation,
-- control distortion,
-- and imperfect trajectories.
-
-This is exactly why real quantum-control pipelines use:
-- DRAG pulses,
-- GRAPE optimization,
-- CRAB methods,
-- closed-loop calibration,
-- hardware transfer-function correction,
-- and multi-parameter waveform optimization.
-
----
-
-# Critical Assessment
+## Critical Assessment
 
 The current implementation is intentionally simple, but physically meaningful.
 
-What the project already demonstrates well:
-
+**What it already demonstrates well:**
 - pulse-driven qubit control,
 - open-system dynamics,
 - decoherence-aware simulation,
@@ -723,55 +334,35 @@ What the project already demonstrates well:
 - Bloch-sphere diagnostics,
 - ideal-versus-noisy gate comparison.
 
-What still limits the current performance:
-
-- only one control degree of freedom is optimized,
-- the pulse family is fixed,
+**What still limits current performance:**
+- only one control degree of freedom is optimized (amplitude),
+- the pulse family is fixed to a single Gaussian,
 - no phase calibration is included,
 - no DRAG correction is used,
 - the model is single-qubit only,
-- the noise model is generic rather than hardware-specific.
+- the noise model uses generic $T_1$/$T_2$ rather than hardware-calibrated values.
 
-Those limitations are actually useful because they expose the real challenges of quantum control instead of artificially producing unrealistically high fidelities.
-
----
-
-# Scientific Concepts Demonstrated
-
-This project demonstrates:
-
-- quantum control theory,
-- pulse-level quantum dynamics,
-- open quantum systems,
-- Lindblad evolution,
-- density matrix simulation,
-- coherence and decoherence,
-- microwave-driven qubit control,
-- numerical optimization,
-- Bloch-sphere diagnostics,
-- fidelity analysis.
+These limitations are useful rather than embarrassing — they expose the real challenges of quantum control instead of artificially producing unrealistically high fidelities that wouldn't reflect anything about actual hardware constraints.
 
 ---
 
-# Future Extensions
+## Future Extensions
 
-Potential upgrades include:
-
-- DRAG pulse implementation
-- optimization of phase and pulse width
+- DRAG pulse implementation to suppress leakage and phase error
+- joint optimization over amplitude, width, and phase
 - GRAPE optimal control
 - CRAB optimization
 - multi-qubit dynamics
-- transmon Hamiltonian modeling
+- transmon (multi-level) Hamiltonian modeling instead of a strict two-level qubit
 - stochastic noise channels
 - pulse scheduling
-- calibration-loop simulation
-- Qiskit Dynamics integration
+- closed-loop calibration simulation
+- Qiskit Dynamics / Qiskit Pulse backend integration
 - quantum process tomography
 
 ---
 
-# Requirements
+## Requirements
 
 ```text
 numpy>=1.24
@@ -783,13 +374,8 @@ qiskit>=1.0
 
 ---
 
-# Author
+## Author
 
-Soumyajit Pal
+**Soumyajit Pal**
 
-Project focus:
-- pulse-level quantum control,
-- open quantum systems,
-- noisy quantum dynamics,
-- scientific quantum software,
-- numerical optimization.
+Project focus: pulse-level quantum control, open quantum systems, noisy quantum dynamics, scientific quantum software, numerical optimization.
