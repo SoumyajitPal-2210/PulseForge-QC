@@ -23,8 +23,11 @@ from qutip import (
 
 def plot_bloch_dynamics(result, tlist):
     """
-    Plot Bloch expectation values
+    Plot Bloch expectation values in a high-contrast dashboard style,
+    consistent with the AutoPulse-Q visualization theme.
     """
+
+    plt.style.use("dark_background")
 
     states = result.states
 
@@ -32,28 +35,37 @@ def plot_bloch_dynamics(result, tlist):
     y = expect(sigmay(), states)
     z = expect(sigmaz(), states)
 
-    plt.figure(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(9, 5.5))
 
-    plt.plot(tlist, x, label="⟨X⟩")
-    plt.plot(tlist, y, label="⟨Y⟩")
-    plt.plot(tlist, z, label="⟨Z⟩")
+    # Reference lines: |0> ground state (+1) and |1> target state (-1)
+    ax.axhline(1.0, color="white", alpha=0.25, linestyle=":")
+    ax.axhline(-1.0, color="white", alpha=0.25, linestyle=":")
 
-    plt.xlabel("Time")
+    ax.plot(tlist, x, color="#888888", linestyle="--", linewidth=1.8, label="⟨X⟩")
+    ax.plot(tlist, y, color="#ff00ff", linewidth=2.4, label="⟨Y⟩")
+    ax.plot(tlist, z, color="#00ffcc", linewidth=2.8, label="⟨Z⟩")
 
-    plt.ylabel(
-        "Expectation Values"
+    ax.fill_between(tlist, z, color="#00ffcc", alpha=0.12)
+
+    ax.set_title(
+        "Bloch Sphere Dynamics",
+        fontsize=17,
+        fontweight="bold"
     )
 
-    plt.title(
-        "Bloch Sphere Dynamics"
-    )
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Expectation Values")
+    ax.set_ylim(-1.15, 1.15)
 
-    plt.grid()
+    ax.legend(loc="upper right")
+    ax.grid(alpha=0.2)
 
-    plt.legend()
+    fig.tight_layout()
 
-    plt.savefig(
-        "results/bloch_dynamics.png"
+    fig.savefig(
+        "results/bloch_dynamics.png",
+        dpi=150,
+        facecolor=fig.get_facecolor()
     )
 
     plt.show()
