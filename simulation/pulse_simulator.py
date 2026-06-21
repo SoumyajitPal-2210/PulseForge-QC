@@ -105,8 +105,7 @@ def simulate_pulse(amplitude):
         H,
         rho0,
         tlist,
-        c_ops,
-        [],
+        c_ops=c_ops,
         args={
             "amp": amplitude,
             "sigma": SIGMA,
